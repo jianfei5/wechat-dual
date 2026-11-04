@@ -196,7 +196,7 @@ private fun ProfileScreen() {
     refresh++
     onPauseOrDispose {}
   }
-  val hasWeChat = remember(refresh) {
+  val hasWeChat = remember(refresh, InstallResultReceiver.done) {
     ctx.getSystemService(LauncherApps::class.java).getActivityList(WECHAT, Process.myUserHandle()).isNotEmpty()
   }
 
@@ -207,18 +207,32 @@ private fun ProfileScreen() {
       if (hasWeChat) {
         Button(onClick = { launchWeChat(ctx, Process.myUserHandle()) }) { Text("打开微信 2") }
       } else {
-        Button(onClick = {
-          if (ProfileSetup.installWeChat(ctx)) toast(ctx, "已克隆微信") else toast(ctx, "克隆失败：主空间需要先安装微信")
-          refresh++
-        }) { Text("从主空间克隆微信") }
+        Button(
+          enabled = !InstallResultReceiver.installing,
+          onClick = {
+            if (ProfileSetup.installWeChat(ctx)) {
+              toast(ctx, "已克隆微信")
+            } else {
+              // 系统克隆接口被拦截，改为复制安装包安装
+              val error = ProfileSetup.installWeChatFromApk(ctx)
+              if (error == null) {
+                InstallResultReceiver.installing = true
+                toast(ctx, "正在复制微信安装包，约需半分钟…")
+              } else {
+                toast(ctx, "克隆失败：$error")
+              }
+            }
+            refresh++
+          },
+        ) { Text(if (InstallResultReceiver.installing) "正在安装…" else "从主空间克隆微信") }
         Text(
           "也可以在这个空间里直接安装微信官方 APK。",
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
       OutlinedButton(onClick = {
-        ProfileSetup.apply(ctx)
-        toast(ctx, "已重新应用配置")
+        val ready = ProfileSetup.apply(ctx)
+        toast(ctx, if (ready) "已重新应用配置" else "已重新应用配置，但微信还没装进分身")
         refresh++
       }) { Text("重新应用配置") }
     }

@@ -5,8 +5,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.os.UserManager
 import android.provider.MediaStore
+import java.io.File
+import kotlin.concurrent.thread
 
 const val WECHAT = "com.tencent.mm"
 
@@ -39,6 +43,42 @@ object ProfileSetup {
   /** 把主空间已安装的微信"复制"进分身空间（共用同一份 APK，数据各自独立）。 */
   fun installWeChat(ctx: Context): Boolean =
     runCatching { dpm(ctx).installExistingPackage(admin(ctx), WECHAT) }.getOrDefault(false)
+
+  /**
+   * installExistingPackage 被部分 ROM（如 HyperOS）拦掉时的兜底：
+   * 读取主空间微信的 APK（含 split），在分身里用 PackageInstaller 重新装一份。
+   * 异步执行，结果由 [InstallResultReceiver] 回报；返回 null 表示已开始，否则为失败原因。
+   */
+  fun installWeChatFromApk(ctx: Context): String? {
+    val info = runCatching {
+      ctx.packageManager.getApplicationInfo(WECHAT, PackageManager.MATCH_UNINSTALLED_PACKAGES)
+    }.getOrNull() ?: return "找不到主空间的微信"
+    val apks = (listOf(info.sourceDir) + info.splitSourceDirs.orEmpty()).map(::File)
+    if (apks.any { !it.canRead() }) return "无法读取微信安装包"
+
+    val app = ctx.applicationContext
+    thread {
+      val installer = app.packageManager.packageInstaller
+      val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        .apply { setAppPackageName(WECHAT) }
+      val id = installer.createSession(params)
+      runCatching {
+        installer.openSession(id).use { session ->
+          apks.forEach { apk ->
+            session.openWrite(apk.name, 0, apk.length()).use { out ->
+              apk.inputStream().use { it.copyTo(out, 1 shl 20) }
+              session.fsync(out)
+            }
+          }
+          session.commit(InstallResultReceiver.sender(app, id))
+        }
+      }.onFailure {
+        installer.abandonSession(id)
+        InstallResultReceiver.report(app, "安装失败：${it.message}")
+      }
+    }
+    return null
+  }
 
   private fun addCrossProfileFilters(dpm: DevicePolicyManager, admin: ComponentName) {
     val both = DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT or
