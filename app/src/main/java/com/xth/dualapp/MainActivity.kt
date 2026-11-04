@@ -8,11 +8,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.CrossProfileApps
 import android.content.pm.LauncherApps
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -206,6 +209,12 @@ private fun ProfileScreen() {
     refresh++
     onPauseOrDispose {}
   }
+  // 界面在前台时才弹系统安装确认页
+  LaunchedEffect(InstallResultReceiver.confirm) {
+    val confirm = InstallResultReceiver.confirm ?: return@LaunchedEffect
+    InstallResultReceiver.confirm = null
+    runCatching { ctx.startActivity(confirm) }.onFailure { InstallResultReceiver.error = "无法打开安装确认页：$it" }
+  }
   val hasWeChat = remember(refresh, InstallResultReceiver.done) {
     ctx.getSystemService(LauncherApps::class.java).getActivityList(WECHAT, Process.myUserHandle()).isNotEmpty()
   }
@@ -222,6 +231,12 @@ private fun ProfileScreen() {
           onClick = {
             if (ProfileSetup.installWeChat(ctx)) {
               toast(ctx, "已克隆微信")
+            } else if (!ctx.packageManager.canRequestPackageInstalls()) {
+              // 复制安装需要分身里的本应用有「安装未知应用」权限
+              ctx.startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}")),
+              )
+              toast(ctx, "请允许「安装未知应用」，然后返回再点一次")
             } else {
               // 系统克隆接口被拦截，改为经剪贴板向主空间要安装包自己装
               ClipboardBridge.request(ctx)?.let {

@@ -18,13 +18,17 @@ import androidx.compose.runtime.setValue
 class InstallResultReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
-      // 系统要求用户确认：弹出系统安装界面
+      // 系统要求用户确认：交给前台界面弹出系统安装页（后台直接拉起会被 HyperOS 拦下并记为用户拒绝）
       PackageInstaller.STATUS_PENDING_USER_ACTION -> {
         @Suppress("DEPRECATION")
-        val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
-        context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT)
       }
       PackageInstaller.STATUS_SUCCESS -> report(context, "微信 2 已装好")
+      PackageInstaller.STATUS_FAILURE_ABORTED -> report(
+        context, "安装被取消：${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)}\n\n" +
+          "请在弹出的安装页点「安装」；没看到安装页的话，把这段发给开发者。",
+        failed = true,
+      )
       else -> report(
         context, "安装失败（$status）：${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)}", failed = true,
       )
@@ -36,6 +40,8 @@ class InstallResultReceiver : BroadcastReceiver() {
     var installing by mutableStateOf(false)
     var done by mutableIntStateOf(0)
     var error by mutableStateOf<String?>(null)
+    /** 待弹出的系统安装确认页。 */
+    var confirm by mutableStateOf<Intent?>(null)
 
     fun sender(ctx: Context, sessionId: Int): IntentSender = PendingIntent.getBroadcast(
       ctx, sessionId, Intent(ctx, InstallResultReceiver::class.java),
