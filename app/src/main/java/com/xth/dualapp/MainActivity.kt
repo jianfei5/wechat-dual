@@ -1,5 +1,6 @@
 package com.xth.dualapp
 
+import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -55,6 +56,7 @@ private val Green = Color(0xFF07C160)
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    receiveApks(intent)
     setContent {
       MaterialTheme(colorScheme = lightColorScheme(primary = Green)) {
         Surface(Modifier.fillMaxSize()) {
@@ -68,6 +70,25 @@ class MainActivity : ComponentActivity() {
           }
         }
       }
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    receiveApks(intent)
+  }
+
+  /** 分身里收到主空间发来的微信安装包路径时开始安装。 */
+  private fun receiveApks(intent: Intent) {
+    val paths = intent.getStringArrayExtra(EXTRA_APKS) ?: return
+    intent.removeExtra(EXTRA_APKS)
+    if (!ProfileSetup.isProfileOwner(this)) return
+    val failure = if (paths.isEmpty()) "主空间没有找到微信" else ProfileSetup.installWeChatFromApk(this, paths)
+    if (failure == null) {
+      InstallResultReceiver.installing = true
+      toast(this, "正在复制微信安装包，约需半分钟…")
+    } else {
+      InstallResultReceiver.error = "克隆失败：$failure"
     }
   }
 }
@@ -196,20 +217,9 @@ private fun ProfileScreen() {
   val ctx = LocalContext.current
   var refresh by remember { mutableIntStateOf(0) }
   var confirmDelete by remember { mutableStateOf(false) }
-  var error by remember { mutableStateOf<String?>(null) }
   LifecycleResumeEffect(Unit) {
     refresh++
     onPauseOrDispose {}
-  }
-  val apkRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-    val paths = result.data?.getStringArrayExtra(EXTRA_APKS)
-    val failure = if (paths == null) "主空间没有找到微信" else ProfileSetup.installWeChatFromApk(ctx, paths)
-    if (failure == null) {
-      InstallResultReceiver.installing = true
-      toast(ctx, "正在复制微信安装包，约需半分钟…")
-    } else {
-      error = "克隆失败：$failure"
-    }
   }
   val hasWeChat = remember(refresh, InstallResultReceiver.done) {
     ctx.getSystemService(LauncherApps::class.java).getActivityList(WECHAT, Process.myUserHandle()).isNotEmpty()
@@ -228,12 +238,11 @@ private fun ProfileScreen() {
             if (ProfileSetup.installWeChat(ctx)) {
               toast(ctx, "已克隆微信")
             } else {
-              // 系统克隆接口被拦截，改为向主空间要安装包自己装；先确保转发规则已就位
+              // 系统克隆接口被拦截，改为向主空间要安装包自己装；先确保跨空间授权名单已就位
               ProfileSetup.apply(ctx)
-              val request = Intent(ACTION_GET_WECHAT_APKS).addCategory(Intent.CATEGORY_DEFAULT)
-              runCatching { apkRequest.launch(request) }.onFailure {
-                val matched = ctx.packageManager.queryIntentActivities(request, 0).map { it.activityInfo.name }
-                error = "克隆失败：无法连接主空间\n\n$it\n\n匹配到：$matched\n系统：${Build.MANUFACTURER} ${Build.DISPLAY} / Android ${Build.VERSION.RELEASE}"
+              ProfileSetup.requestWeChatFromParent(ctx as Activity)?.let {
+                InstallResultReceiver.error =
+                  "克隆失败：$it\n\n系统：${Build.MANUFACTURER} ${Build.DISPLAY} / Android ${Build.VERSION.RELEASE}"
               }
             }
             refresh++
@@ -266,10 +275,10 @@ private fun ProfileScreen() {
     }
   }
 
-  error?.let { msg ->
+  InstallResultReceiver.error?.let { msg ->
     // 错误弹窗：分身里的截图主空间看不到，提供复制按钮方便反馈
     AlertDialog(
-      onDismissRequest = { error = null },
+      onDismissRequest = { InstallResultReceiver.error = null },
       title = { Text("出错了") },
       text = { SelectionContainer { Text(msg) } },
       confirmButton = {
@@ -278,7 +287,7 @@ private fun ProfileScreen() {
           toast(ctx, "已复制")
         }) { Text("复制") }
       },
-      dismissButton = { TextButton(onClick = { error = null }) { Text("关闭") } },
+      dismissButton = { TextButton(onClick = { InstallResultReceiver.error = null }) { Text("关闭") } },
     )
   }
 
