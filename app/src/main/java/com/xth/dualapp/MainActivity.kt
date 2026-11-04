@@ -1,6 +1,5 @@
 package com.xth.dualapp
 
-import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -56,7 +55,6 @@ private val Green = Color(0xFF07C160)
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    receiveApks(intent)
     setContent {
       MaterialTheme(colorScheme = lightColorScheme(primary = Green)) {
         Surface(Modifier.fillMaxSize()) {
@@ -73,23 +71,10 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    receiveApks(intent)
-  }
-
-  /** 分身里收到主空间发来的微信安装包路径时开始安装。 */
-  private fun receiveApks(intent: Intent) {
-    val paths = intent.getStringArrayExtra(EXTRA_APKS) ?: return
-    intent.removeExtra(EXTRA_APKS)
-    if (!ProfileSetup.isProfileOwner(this)) return
-    val failure = if (paths.isEmpty()) "主空间没有找到微信" else ProfileSetup.installWeChatFromApk(this, paths)
-    if (failure == null) {
-      InstallResultReceiver.installing = true
-      toast(this, "正在复制微信安装包，约需半分钟…")
-    } else {
-      InstallResultReceiver.error = "克隆失败：$failure"
-    }
+  // 剪贴板只有拿到焦点后才能读
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus) ClipboardBridge.handle(this)
   }
 }
 
@@ -238,9 +223,8 @@ private fun ProfileScreen() {
             if (ProfileSetup.installWeChat(ctx)) {
               toast(ctx, "已克隆微信")
             } else {
-              // 系统克隆接口被拦截，改为向主空间要安装包自己装；先确保跨空间授权名单已就位
-              ProfileSetup.apply(ctx)
-              ProfileSetup.requestWeChatFromParent(ctx as Activity)?.let {
+              // 系统克隆接口被拦截，改为经剪贴板向主空间要安装包自己装
+              ClipboardBridge.request(ctx)?.let {
                 InstallResultReceiver.error =
                   "克隆失败：$it\n\n系统：${Build.MANUFACTURER} ${Build.DISPLAY} / Android ${Build.VERSION.RELEASE}"
               }

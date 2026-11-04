@@ -2,24 +2,18 @@ package com.xth.dualapp
 
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.CrossProfileApps
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.UserManager
 import android.provider.MediaStore
-import android.widget.Toast
 import java.io.File
 import kotlin.concurrent.thread
 
 const val WECHAT = "com.tencent.mm"
 
-/** 主空间回传给分身的微信安装包路径，见 [WeChatApkActivity]。 */
-const val EXTRA_APKS = "apks"
 
 /** 工作资料内的配置；只有本应用是 Profile Owner（即运行在分身空间里）时才生效，可重复调用。 */
 object ProfileSetup {
@@ -42,10 +36,6 @@ object ProfileSetup {
     // 分身里的来电/通讯录信息在主空间可见
     runCatching { dpm.setCrossProfileCallerIdDisabled(admin, false) }
     addCrossProfileFilters(dpm, admin)
-    // 允许本应用申请「关联个人应用和工作应用」，用于两个空间之间传数据
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      dpm.setCrossProfilePackages(admin, setOf(ctx.packageName))
-    }
     dpm.setProfileEnabled(admin)
 
     return installWeChat(ctx)
@@ -55,29 +45,7 @@ object ProfileSetup {
   fun installWeChat(ctx: Context): Boolean =
     runCatching { dpm(ctx).installExistingPackage(admin(ctx), WECHAT) }.getOrDefault(false)
 
-  /**
-   * 请主空间那份应用把微信安装包路径发回来（经 CrossProfileApps，部分 ROM 不认跨资料 intent filter）。
-   * 返回 null 表示请求已发出或已跳转去授权，否则为失败原因。
-   */
-  fun requestWeChatFromParent(activity: Activity): String? {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return "需要 Android 11 及以上"
-    val cpa = activity.getSystemService(CrossProfileApps::class.java)
-    val parent = cpa.targetUserProfiles.firstOrNull() ?: return "找不到主空间里的本应用"
-    if (!cpa.canInteractAcrossProfiles()) {
-      if (!cpa.canRequestInteractAcrossProfiles()) return "系统不允许本应用跨空间通信"
-      return runCatching {
-        activity.startActivity(cpa.createRequestInteractAcrossProfilesIntent())
-        Toast.makeText(activity, "请打开「关联」开关，然后返回再点一次", Toast.LENGTH_LONG).show()
-        null
-      }.getOrElse { "无法打开关联设置：$it" }
-    }
-    return runCatching {
-      cpa.startActivity(Intent(activity, WeChatApkActivity::class.java), parent, activity)
-      null
-    }.getOrElse { "无法连接主空间：$it" }
-  }
-
-  /** 本空间微信的 APK 路径（含 split）；在主空间调用。 */
+  /** 本空间微信的 APK 路径（含 split）；在主空间调用，经 [ClipboardBridge] 交给分身。 */
   fun weChatApkPaths(ctx: Context): Array<String>? = runCatching {
     val info = ctx.packageManager.getApplicationInfo(WECHAT, 0)
     arrayOf(info.sourceDir, *info.splitSourceDirs.orEmpty())

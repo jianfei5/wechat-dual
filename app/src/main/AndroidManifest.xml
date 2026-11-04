@@ -8,8 +8,6 @@
 
   <!-- installExistingPackage 不可用时，在分身里用 PackageInstaller 安装微信 -->
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-  <!-- 两个空间之间传数据（需用户在系统设置里打开「关联」） -->
-  <uses-permission android:name="android.permission.INTERACT_ACROSS_PROFILES" />
 
   <application
     android:label="@string/app_name"
@@ -60,12 +58,6 @@
         <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
       </intent-filter>
     </receiver>
-
-    <!-- 主空间这份由分身经 CrossProfileApps 拉起，回传微信安装包路径 -->
-    <activity
-      android:name=".WeChatApkActivity"
-      android:exported="false"
-      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
     <receiver
       android:name=".InstallResultReceiver"

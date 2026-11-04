@@ -45,7 +45,9 @@ class InstallResultReceiver : BroadcastReceiver() {
     fun report(ctx: Context, msg: String, failed: Boolean = false) = Handler(Looper.getMainLooper()).post {
       installing = false
       done++
-      if (failed) error = msg else Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+      if (failed) error = msg else toast(ctx, msg)
     }
+
+    fun toast(ctx: Context, msg: String) = Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
   }
 }
