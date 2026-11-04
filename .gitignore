@@ -8,5 +8,3 @@ local.properties
 *.jks
 keystore.properties
 dist/
-apk/
-*.apk
