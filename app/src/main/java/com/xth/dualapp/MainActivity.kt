@@ -196,6 +196,16 @@ private fun ProfileScreen() {
     refresh++
     onPauseOrDispose {}
   }
+  val apkRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+    val paths = result.data?.getStringArrayExtra(EXTRA_APKS)
+    val error = if (paths == null) "主空间没有找到微信" else ProfileSetup.installWeChatFromApk(ctx, paths)
+    if (error == null) {
+      InstallResultReceiver.installing = true
+      toast(ctx, "正在复制微信安装包，约需半分钟…")
+    } else {
+      toast(ctx, "克隆失败：$error")
+    }
+  }
   val hasWeChat = remember(refresh, InstallResultReceiver.done) {
     ctx.getSystemService(LauncherApps::class.java).getActivityList(WECHAT, Process.myUserHandle()).isNotEmpty()
   }
@@ -213,14 +223,10 @@ private fun ProfileScreen() {
             if (ProfileSetup.installWeChat(ctx)) {
               toast(ctx, "已克隆微信")
             } else {
-              // 系统克隆接口被拦截，改为复制安装包安装
-              val error = ProfileSetup.installWeChatFromApk(ctx)
-              if (error == null) {
-                InstallResultReceiver.installing = true
-                toast(ctx, "正在复制微信安装包，约需半分钟…")
-              } else {
-                toast(ctx, "克隆失败：$error")
-              }
+              // 系统克隆接口被拦截，改为向主空间要安装包自己装；先确保转发规则已就位
+              ProfileSetup.apply(ctx)
+              runCatching { apkRequest.launch(Intent(ACTION_GET_WECHAT_APKS).addCategory(Intent.CATEGORY_DEFAULT)) }
+                .onFailure { toast(ctx, "克隆失败：无法连接主空间（${it.message}）") }
             }
             refresh++
           },

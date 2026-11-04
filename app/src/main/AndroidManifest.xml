@@ -58,6 +58,17 @@
       </intent-filter>
     </receiver>
 
+    <!-- 主空间这份响应分身的索取请求；分身里那份在 ProfileSetup.apply 中被禁用 -->
+    <activity
+      android:name=".WeChatApkActivity"
+      android:exported="true"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar">
+      <intent-filter>
+        <action android:name="com.xth.dualapp.GET_WECHAT_APKS" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </activity>
+
     <receiver
       android:name=".InstallResultReceiver"
       android:exported="false" />

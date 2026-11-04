@@ -14,6 +14,10 @@ import kotlin.concurrent.thread
 
 const val WECHAT = "com.tencent.mm"
 
+/** 分身向主空间索取微信安装包路径，经跨资料 intent filter 转发到主空间的 [WeChatApkActivity]。 */
+const val ACTION_GET_WECHAT_APKS = "com.xth.dualapp.GET_WECHAT_APKS"
+const val EXTRA_APKS = "apks"
+
 /** 工作资料内的配置；只有本应用是 Profile Owner（即运行在分身空间里）时才生效，可重复调用。 */
 object ProfileSetup {
 
@@ -35,6 +39,12 @@ object ProfileSetup {
     // 分身里的来电/通讯录信息在主空间可见
     runCatching { dpm.setCrossProfileCallerIdDisabled(admin, false) }
     addCrossProfileFilters(dpm, admin)
+    // 分身里的这份不响应索取请求，保证请求一定转发到主空间
+    ctx.packageManager.setComponentEnabledSetting(
+      ComponentName(ctx, WeChatApkActivity::class.java),
+      PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+      PackageManager.DONT_KILL_APP,
+    )
     dpm.setProfileEnabled(admin)
 
     return installWeChat(ctx)
@@ -44,16 +54,19 @@ object ProfileSetup {
   fun installWeChat(ctx: Context): Boolean =
     runCatching { dpm(ctx).installExistingPackage(admin(ctx), WECHAT) }.getOrDefault(false)
 
+  /** 本空间微信的 APK 路径（含 split）；在主空间调用。 */
+  fun weChatApkPaths(ctx: Context): Array<String>? = runCatching {
+    val info = ctx.packageManager.getApplicationInfo(WECHAT, 0)
+    arrayOf(info.sourceDir, *info.splitSourceDirs.orEmpty())
+  }.getOrNull()
+
   /**
    * installExistingPackage 被部分 ROM（如 HyperOS）拦掉时的兜底：
-   * 读取主空间微信的 APK（含 split），在分身里用 PackageInstaller 重新装一份。
+   * 拿主空间微信的 APK 路径，在分身里用 PackageInstaller 重新装一份。
    * 异步执行，结果由 [InstallResultReceiver] 回报；返回 null 表示已开始，否则为失败原因。
    */
-  fun installWeChatFromApk(ctx: Context): String? {
-    val info = runCatching {
-      ctx.packageManager.getApplicationInfo(WECHAT, PackageManager.MATCH_UNINSTALLED_PACKAGES)
-    }.getOrNull() ?: return "找不到主空间的微信"
-    val apks = (listOf(info.sourceDir) + info.splitSourceDirs.orEmpty()).map(::File)
+  fun installWeChatFromApk(ctx: Context, paths: Array<String>): String? {
+    val apks = paths.map(::File)
     if (apks.any { !it.canRead() }) return "无法读取微信安装包"
 
     val app = ctx.applicationContext
@@ -102,6 +115,10 @@ object ProfileSetup {
     dpm.addCrossProfileIntentFilter(
       admin, filter(MediaStore.ACTION_IMAGE_CAPTURE, MediaStore.ACTION_VIDEO_CAPTURE), toParent,
     )
+    // 分身向主空间索取微信安装包路径
+    dpm.addCrossProfileIntentFilter(admin, IntentFilter(ACTION_GET_WECHAT_APKS).apply {
+      addCategory(Intent.CATEGORY_DEFAULT)
+    }, toParent)
     // 分身里点链接用主空间的浏览器打开
     dpm.addCrossProfileIntentFilter(admin, IntentFilter(Intent.ACTION_VIEW).apply {
       addCategory(Intent.CATEGORY_DEFAULT)
