@@ -8,7 +8,7 @@
 
 ## 下载
 
-[apk/](apk/) 目录下是可直接安装的 APK。
+到 [Releases](https://github.com/jianfei5/wechat-dual/releases/latest) 下载最新 APK，或直接用仓库 [apk/](apk/) 目录下的安装包。
 
 ## 小米 / HyperOS
 
