@@ -1,0 +1,33 @@
+name: 问题反馈 / 机型兼容报告
+description: 某台手机上用不了，或者想报告某机型可以正常使用
+body:
+  - type: input
+    id: device
+    attributes:
+      label: 机型和系统
+      description: 例如 Xiaomi 14 / HyperOS 2 / Android 15
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 微信分身版本
+      placeholder: 1.0.6
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: 结果
+      options:
+        - 一键创建失败或按钮是灰的
+        - 分身里装不上微信
+        - 能用，但部分功能异常
+        - 完全正常
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 详细情况
+      description: 出错时 App 会弹窗显示原因，点「复制」后粘贴到这里；也可以附截图。
